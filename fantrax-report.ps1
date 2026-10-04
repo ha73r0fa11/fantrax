@@ -189,11 +189,9 @@ foreach ($pos in 'G', 'D', 'M', 'F') {
 }
 Tbl @('Номинация', 'Игрок', 'Поз.', 'Клуб', 'Команда', 'Очки') $rows
 
-L '### 👑 Король скамейки'
+$kings = Top @($curRoster | Where-Object { -not $_.Active }) FPts
+L "👑 **Король скамейки:** $(($kings | ForEach-Object { "$($_.Team) ($($_.Name) ($($_.Pos), $($_.Club)), $(Fmt $_.FPts))" }) -join '; ')"
 L
-$rows = New-Object 'System.Collections.Generic.List[object]'
-foreach ($b in (Top @($curRoster | Where-Object { -not $_.Active }) FPts)) { $rows.Add(@($b.Name, $b.Pos, $b.Club, $b.Team, (Fmt $b.FPts))) }
-Tbl @('Игрок', 'Поз.', 'Клуб', 'Команда', 'Очки') $rows
 
 L "### 🔥 Супертопы ($SuperTop+ очков за тур)"
 L
