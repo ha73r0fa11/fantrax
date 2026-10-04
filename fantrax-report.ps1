@@ -168,6 +168,8 @@ $cur = @($players | Where-Object { $_.Tour -eq $Tour })
 $curRoster = @($roster | Where-Object { $_.Tour -eq $Tour })
 $curTeams = @($standings[$Tour] | ForEach-Object { [pscustomobject]@{ Team = $teamName[$_.TeamId]; FPts = $_.FPts } })
 
+L '#статистикатура'
+L
 L "# Fantrax: отчёт по туру $Tour"
 L
 L "## Тур $Tour"
@@ -214,6 +216,8 @@ foreach ($pos in 'G', 'D', 'M', 'F') {
 Tbl @('Номинация', 'Игрок', 'Поз.', 'Клуб', 'Очки') $rows
 
 # ---------- сезон ----------
+L '#статистикасезона'
+L
 L "## Сезон (туры 1–$Tour)"
 L
 
