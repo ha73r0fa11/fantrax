@@ -232,15 +232,16 @@ $mgr = @($mgr | Sort-Object @{e = 'Pts'; Descending = $true }, @{e = 'FPts'; Des
 
 function Rng($m) { if ($m.From -eq $m.To) { "тур $($m.From)" } else { "туры $($m.From)–$($m.To)" } }
 
-$rec = Top $players FPts
-$anti = Top $players FPts -Min
+$tourScores = @(foreach ($p in 1..$Tour) { $standings[$p] | ForEach-Object { [pscustomobject]@{ Tour = $p; Team = $teamName[$_.TeamId]; FPts = $_.FPts } } })
+$rec = Top $tourScores FPts
+$anti = Top $tourScores FPts -Min
 $sum = Top $mgr FPts
 $ga = Top $mgr GA
 $strk = Top $mgr Streak
 $fl = $mgr[0]
 
-L "- 🏅 **РЕКОРД лиги:** $(($rec | ForEach-Object { "**$($_.Name)** ($($_.Pos), $($_.Club)) — $(Fmt $_.FPts), тур $($_.Tour), $(OwnerText $_)" }) -join '; ')"
-L "- 💀 **Антирекорд:** $(($anti | ForEach-Object { "**$($_.Name)** ($($_.Pos), $($_.Club)) — $(Fmt $_.FPts), тур $($_.Tour), $(OwnerText $_)" }) -join '; ')"
+L "- 🏅 **РЕКОРД лиги (лучший результат менеджера за тур):** $(($rec | ForEach-Object { "**$($_.Team)** — $(Fmt $_.FPts), тур $($_.Tour)" }) -join '; ')"
+L "- 💀 **Антирекорд (худший результат менеджера за тур):** $(($anti | ForEach-Object { "**$($_.Team)** — $(Fmt $_.FPts), тур $($_.Tour)" }) -join '; ')"
 L "- 💰 **Сумма очков:** $(($sum | ForEach-Object { "**$($_.Team)** — $(Fmt $_.FPts)" }) -join ', ')"
 L "- ⚽🅰 **Лучший по Г+П:** $(($ga | ForEach-Object { "**$($_.Team)** — $($_.GA) (голы $($_.G) + передачи $($_.A))" }) -join ', ')"
 L "- 👑 **Лидер фентези:** **$($fl.Team)** — $($fl.Pts) очк. в турнирной таблице ($($fl.W)-$($fl.D)-$($fl.L)), сумма очков $(Fmt $fl.FPts)"
@@ -254,11 +255,11 @@ $i = 0
 foreach ($m in $mgr) { $i++; $rows.Add(@($i, $m.Team, "$($m.W)-$($m.D)-$($m.L)", $m.Pts, (Fmt $m.FPts), $m.G, $m.A, $m.GA, $m.Streak)) }
 Tbl @('#', 'Менеджер', 'В-Н-П', 'Очки', 'Сумма FPts', 'Голы', 'Пасы', 'Г+П', 'Макс. серия побед') $rows
 
-L '### 🌟 Сборная сезона (лучший результат за тур по позициям)'
+L '### 🌟 Сборная сезона (один лучший на позицию)'
 L
 $rows = New-Object 'System.Collections.Generic.List[object]'
 foreach ($pos in 'G', 'D', 'M', 'F') {
-    foreach ($b in (Top @($players | Where-Object { $_.Pos -eq $pos }) FPts)) {
+    foreach ($b in (@($players | Where-Object { $_.Pos -eq $pos } | Sort-Object @{e = 'FPts'; Descending = $true }, Tour, Name | Select-Object -First 1))) {
         $rows.Add(@($pos, (Fmt $b.FPts), $b.Name, $b.Club, (OwnerText $b), $b.Tour))
     }
 }
