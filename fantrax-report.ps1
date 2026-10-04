@@ -46,6 +46,8 @@ function Num($s) {
     [double]::Parse(("$s" -replace ',', ''), [Globalization.CultureInfo]::InvariantCulture)
 }
 
+function Idx($h, [string]$name) { $i = 0; foreach ($x in $h) { if ($x -eq $name) { return $i }; $i++ }; -1 }
+
 function Fmt([double]$x) { $x.ToString('0.00', [Globalization.CultureInfo]::InvariantCulture) }
 
 function PrimaryPos([string]$p) { ($p -split '[,/ ]')[0] }
@@ -72,7 +74,7 @@ for ($p = 1; $p -le $Tour; $p++) {
     $d = Q 'getStandings' @{ leagueId = $LeagueId; timeframeType = 'BY_PERIOD'; period = "$p" }
     $t = $d.tableList[0]
     $h = @($t.header.cells | ForEach-Object { $_.shortName })
-    $iW = $h.IndexOf('W'); $iD = $h.IndexOf('D'); $iL = $h.IndexOf('L'); $iP = $h.IndexOf('Points'); $iF = $h.IndexOf('FPtsF')
+    $iW = (Idx $h 'W'); $iD = (Idx $h 'D'); $iL = (Idx $h 'L'); $iP = (Idx $h 'Points'); $iF = (Idx $h 'FPtsF')
     $standings[$p] = @($t.rows | ForEach-Object {
         $tm = $_.fixedCells[1]
         $teamName[$tm.teamId] = $tm.content
@@ -89,15 +91,15 @@ $roster = New-Object 'System.Collections.Generic.List[object]'
 $ownerOf = @{}  # "тур|playerId" -> запись состава
 for ($p = 1; $p -le $Tour; $p++) {
     foreach ($tid in $teamIds) {
-        $d = Q 'getTeamRosterInfo' @{ leagueId = $LeagueId; teamId = $tid; period = "$p"; view = 'STATS' }
+        $d = Q 'getTeamRosterInfo' @{ leagueId = $LeagueId; teamId = $tid; period = "$p"; view = 'STATS'; seasonOrProjection = $SeasonCode; timeframeTypeCode = 'BY_PERIOD' }
         # голы и результативные передачи берём из "Standard"-вида: в "Tracked" есть только вторые передачи (A2)
-        $std = Q 'getTeamRosterInfo' @{ leagueId = $LeagueId; teamId = $tid; period = "$p"; view = 'STATS'; scoringCategoryType = '1' }
+        $std = Q 'getTeamRosterInfo' @{ leagueId = $LeagueId; teamId = $tid; period = "$p"; view = 'STATS'; seasonOrProjection = $SeasonCode; timeframeTypeCode = 'BY_PERIOD'; scoringCategoryType = '1' }
         $ga = @{}
         foreach ($tb in $std.tables) {
             $h = @($tb.header.cells | ForEach-Object { $_.shortName })
-            $iG = $h.IndexOf('G'); $iA = $h.IndexOf('A')
+            $iG = (Idx $h 'G'); $iA = (Idx $h 'A')
             foreach ($row in $tb.rows) {
-                if (-not $row.scorer) { continue }
+                if (-not $row.scorer -or -not $row.scorer.scorerId) { continue }
                 $ga[$row.scorer.scorerId] = @(
                     $(if ($iG -ge 0) { Num $row.cells[$iG].content } else { 0 }),
                     $(if ($iA -ge 0) { Num $row.cells[$iA].content } else { 0 }))
@@ -105,9 +107,9 @@ for ($p = 1; $p -le $Tour; $p++) {
         }
         foreach ($tb in $d.tables) {
             $h = @($tb.header.cells | ForEach-Object { $_.shortName })
-            $iF = $h.IndexOf('FPts')
+            $iF = (Idx $h 'FPts')
             foreach ($row in $tb.rows) {
-                if (-not $row.scorer) { continue }
+                if (-not $row.scorer -or -not $row.scorer.scorerId) { continue }
                 $pair = $ga[$row.scorer.scorerId]
                 $e = [pscustomobject]@{
                     Tour = $p; TeamId = $tid; Team = $teamName[$tid]; Id = $row.scorer.scorerId
@@ -132,7 +134,7 @@ for ($p = 1; $p -le $Tour; $p++) {
         $d = Q 'getPlayerStats' @{ leagueId = $LeagueId; statusOrTeamFilter = 'ALL'; seasonOrProjection = $SeasonCode
             timeframeTypeCode = 'BY_PERIOD'; transactionPeriod = "$p"; pageNumber = "$pg" }
         $h = @($d.tableHeader.cells | ForEach-Object { $_.shortName })
-        $iF = $h.IndexOf('FPts')
+        $iF = (Idx $h 'FPts')
         foreach ($r in $d.statsTable) {
             $own = $ownerOf["$p|$($r.scorer.scorerId)"]
             $players.Add([pscustomobject]@{
@@ -145,6 +147,15 @@ for ($p = 1; $p -le $Tour; $p++) {
     } while ($pg -le $tp)
     Write-Host "Тур ${p}: игроки загружены" -ForegroundColor DarkGray
 }
+
+$mismatch = 0
+foreach ($p in 1..$Tour) {
+    foreach ($s in $standings[$p]) {
+        $sum = (@($roster | Where-Object { $_.Tour -eq $p -and $_.TeamId -eq $s.TeamId -and $_.Active }) | Measure-Object FPts -Sum).Sum
+        if ([math]::Abs($sum - $s.FPts) -gt 0.01) { $mismatch++; Write-Warning "Тур ${p}, $($teamName[$s.TeamId]): состав $(Fmt $sum) != таблица $(Fmt $s.FPts)" }
+    }
+}
+if ($mismatch -eq 0) { Write-Host 'Проверка: очки основных составов совпадают с таблицей лиги во всех турах' -ForegroundColor Green }
 
 function OwnerText($x) {
     if (-not $x.Owner) { 'свободный агент' }
@@ -285,3 +296,6 @@ Tbl @('#', 'Очки', 'Менеджер', 'Тур') $rows
 $text = $out -join "`n"
 if ($OutFile) { Set-Content -Path $OutFile -Value $text -Encoding UTF8 }
 $text
+
+
+
