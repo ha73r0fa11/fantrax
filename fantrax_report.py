@@ -429,6 +429,7 @@ def main():
     parser.add_argument("--tour", type=int, default=1, help="номер тура (сезон считается как туры 1..N)")
     parser.add_argument("--league-id", default="rwoc4s02mrui4mac")
     parser.add_argument("--out-file", help="сохранить отчёт в файл (UTF-8)")
+    parser.add_argument("--docx", help="сохранить отчёт в файл .docx")
     parser.add_argument("--super-top", type=float, default=30, help="порог очков для супертопов")
     args = parser.parse_args()
 
@@ -442,6 +443,10 @@ def main():
     if args.out_file:
         with open(args.out_file, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
+    if args.docx:
+        from md_to_docx import markdown_to_docx
+
+        markdown_to_docx(text, args.docx)
     print(text)
 
 
