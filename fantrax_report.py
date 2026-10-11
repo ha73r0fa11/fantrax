@@ -147,25 +147,14 @@ def load_data(api, tour):
                 "timeframeTypeCode": "BY_PERIOD",
             }
             d = api.query("getTeamRosterInfo", base)
-            # голы и результативные передачи берём из "Standard"-вида: в "Tracked" есть только вторые передачи (A2)
-            std = api.query("getTeamRosterInfo", {**base, "scoringCategoryType": "1"})
-            goals_assists = {}
-            for tb in std["tables"]:
-                header = [c["shortName"] for c in tb["header"]["cells"]]
-                ig, ia = col(header, "G"), col(header, "A")
-                for row in tb["rows"]:
-                    scorer = row.get("scorer")
-                    if not scorer or not scorer.get("scorerId"):
-                        continue
-                    goals_assists[scorer["scorerId"]] = (num(cell(row, ig)), num(cell(row, ia)))
             for tb in d["tables"]:
                 header = [c["shortName"] for c in tb["header"]["cells"]]
-                iff = col(header, "FPts")
+                iff, ig, ia = col(header, "FPts"), col(header, "G"), col(header, "AT")
                 for row in tb["rows"]:
                     scorer = row.get("scorer")
                     if not scorer or not scorer.get("scorerId"):
                         continue
-                    g, a = goals_assists.get(scorer["scorerId"], (0.0, 0.0))
+                    g, a = num(cell(row, ig)), num(cell(row, ia))
                     entry = {
                         "tour": p,
                         "team_id": tid,
