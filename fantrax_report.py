@@ -242,12 +242,11 @@ def build_report(tour, standings, team_name, team_ids, roster, players, super_to
 
     def nomination_rows(items, with_team):
         rows = []
-        for b in top(items, lambda x: x["fpts"]):
-            row = ["⭐ Лучший футболист" if with_team else "⭐ Лучший", b["name"], b["pos"], b["club"]]
-            rows.append(row + ([b["team"]] if with_team else []) + [fmt(b["fpts"])])
+        best = max((x["fpts"] for x in items), default=None)
         for pos in "GDMF":
             for b in top([x for x in items if x["pos"] == pos], lambda x: x["fpts"]):
-                row = [f"Лучший {POS_NAMES[pos]}", b["name"], b["pos"], b["club"]]
+                star = "⭐ " if b["fpts"] == best else ""
+                row = [f"{star}Лучший {POS_NAMES[pos]}", b["name"], b["pos"], b["club"]]
                 rows.append(row + ([b["team"]] if with_team else []) + [fmt(b["fpts"])])
         return rows
 
@@ -307,7 +306,7 @@ def build_report(tour, standings, team_name, team_ids, roster, players, super_to
         mine = [x for x in roster if x["team_id"] == tid and x["active"]]
         run = best = best_from = best_to = start = 0
         for p, r in enumerate(results, start=1):
-            if r["w"] > 0 and r["l"] == 0 and r["d"] == 0:
+            if r["l"] == 0:
                 if run == 0:
                     start = p
                 run += 1
@@ -366,7 +365,7 @@ def build_report(tour, standings, team_name, team_ids, roster, players, super_to
         f"({whole(leader['w'])}-{whole(leader['d'])}-{whole(leader['l'])}), сумма очков {fmt(leader['fpts'])}"
     )
     line(
-        "- 🔥 **Самый длинный винстрик:** "
+        "- 🔥 **Самый длинный стрик (без поражений):** "
         + ", ".join(f"**{m['team']}** — {m['streak']} ({span(m)})" for m in top(managers, lambda m: m["streak"]))
     )
     line()
@@ -374,7 +373,7 @@ def build_report(tour, standings, team_name, team_ids, roster, players, super_to
     line("### Таблица менеджеров")
     line()
     table(
-        ["#", "Менеджер", "В-Н-П", "Очки", "Сумма FPts", "Голы", "Пасы", "Г+П", "Макс. серия побед"],
+        ["#", "Менеджер", "В-Н-П", "Очки", "Сумма FPts", "Голы", "Пасы", "Г+П"],
         [
             [
                 i,
@@ -385,7 +384,6 @@ def build_report(tour, standings, team_name, team_ids, roster, players, super_to
                 whole(m["g"]),
                 whole(m["a"]),
                 whole(m["ga"]),
-                m["streak"],
             ]
             for i, m in enumerate(managers, start=1)
         ],
