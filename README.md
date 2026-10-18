@@ -9,3 +9,5 @@ python fantrax_report.py --tour 5 --out-file tour5.md
 Параметры: `--tour N` (обязательный), `--out-file`, `--league-id`, `--super-top` (по умолчанию 30).
 
 Сохранение в Word: добавьте `--docx tour5.docx` (без внешних библиотек).
+
+Telegram-бот: см. TELEGRAM_BOT.md.
