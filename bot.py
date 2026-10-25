@@ -132,6 +132,28 @@ def season_block(key):
 
 
 # ---------- оформление ----------
+def row_text(r):
+    """Строка таблицы -> читаемая строка с выделенным именем (Telegram не умеет таблицы)."""
+    esc = lambda s: html.escape(s, quote=False)
+    name = esc(r.get("Игрок") or r.get("Менеджер") or "")
+    prefix = f"{esc(r['#'])}. " if "#" in r else ""
+    if "Номинация" in r:
+        prefix = f"{esc(r['Номинация'])}: "
+    if "Сумма FPts" in r:
+        return (
+            f"{prefix}<b>{name}</b> — {esc(r['Очки'])} очк. ({esc(r['В-Н-П'])})\n"
+            f"      сумма {esc(r['Сумма FPts'])} · голы {esc(r['Голы'])} · пасы {esc(r['Пасы'])} · Г+П {esc(r['Г+П'])}"
+        )
+    owner = r.get("Команда") or r.get("У кого") or ""
+    info = ", ".join(esc(x) for x in (r.get("Поз."), r.get("Клуб"), owner) if x)
+    line = f"{prefix}<b>{name}</b>" + (f" ({info})" if info else "")
+    if "Очки" in r:
+        line += f" — <b>{esc(r['Очки'])}</b>"
+    if "Тур" in r:
+        line += f", тур {esc(r['Тур'])}"
+    return line
+
+
 def render(md):
     """Markdown-фрагмент -> HTML для Telegram (таблицы в <pre>)."""
     out, table = [], []
@@ -141,9 +163,9 @@ def render(md):
             return
         rows = [[c.strip() for c in r.strip("|").split("|")] for r in table]
         rows = [r for r in rows if not all(re.fullmatch(r":?-{3,}:?", c) for c in r)]
-        widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
-        lines = ["  ".join(c.ljust(w) for c, w in zip(r, widths)).rstrip() for r in rows]
-        out.append("<pre>" + html.escape("\n".join(lines), quote=False) + "</pre>")
+        head = rows[0]
+        lines = [row_text(dict(zip(head, r))) for r in rows[1:]]
+        out.append("\n".join(lines))
         table.clear()
 
     for line in md.splitlines():
