@@ -191,87 +191,84 @@ def chunks(text, limit=3800):
     return parts
 
 
-# ---------- меню ----------
-def main_menu():
-    return "Выберите отчёт:", keyboard([[("📅 Отчет по туру", "m:tours")], [("🏆 Отчет по сезону", "m:season")]])
+# ---------- меню (кнопки внизу экрана) ----------
+BTN_TOUR, BTN_SEASON = "📅 Отчет по туру", "🏆 Отчет по сезону"
+BTN_BACK, BTN_TO_TOURS = "⬅️ Назад", "⬅️ К турам"
+STATE = {}  # chat_id -> {"screen": "main"|"tours"|"tour"|"season", "tour": N}
 
 
-def tours_menu():
+def reply_keyboard(rows):
+    return {"keyboard": [[{"text": t} for t in row] for row in rows], "resize_keyboard": True, "is_persistent": True}
+
+
+def show(chat_id, screen, text, rows, tour=None):
+    STATE[chat_id] = {"screen": screen, "tour": tour}
+    api("sendMessage", chat_id=chat_id, text=text, reply_markup=reply_keyboard(rows))
+
+
+def show_main(chat_id):
+    show(chat_id, "main", "Выберите отчёт:", [[BTN_TOUR], [BTN_SEASON]])
+
+
+def show_tours(chat_id):
     nums = available_tours()
     if not nums:
-        return "Данных по турам пока нет.", keyboard([[("⬅️ Назад", "m:main")]])
-    btns = [(f"Тур {n}", f"t:{n}") for n in nums]
-    rows = [btns[i : i + 4] for i in range(0, len(btns), 4)]
-    rows.append([("⬅️ Назад", "m:main")])
-    return "Выберите тур:", keyboard(rows)
+        return show(chat_id, "tours", "Данных по турам пока нет.", [[BTN_BACK]])
+    btns = [f"Тур {n}" for n in nums]
+    rows = [btns[i : i + 4] for i in range(0, len(btns), 4)] + [[BTN_BACK]]
+    show(chat_id, "tours", "Выберите тур:", rows)
 
 
-def tour_menu(n):
-    rows = [[(title, f"tb:{n}:{key}")] for key, title in TOUR_BLOCKS]
-    rows.append([("⬅️ К турам", "m:tours")])
-    return f"Тур {n}. Что показать?", keyboard(rows)
+def show_tour(chat_id, n):
+    rows = [[title] for _, title in TOUR_BLOCKS] + [[BTN_TO_TOURS]]
+    show(chat_id, "tour", f"Тур {n}. Что показать?", rows, n)
 
 
-def season_menu():
-    rows = [[(title, f"sb:{key}")] for key, title in SEASON_BLOCKS]
-    rows.append([("⬅️ Назад", "m:main")])
-    return "Отчёт по сезону. Что показать?", keyboard(rows)
+def show_season(chat_id):
+    rows = [[title] for _, title in SEASON_BLOCKS] + [[BTN_BACK]]
+    show(chat_id, "season", "Отчёт по сезону. Что показать?", rows)
 
 
-def send_menu(chat_id, menu, message_id=None):
-    text, markup = menu
-    if message_id:
-        api("editMessageText", chat_id=chat_id, message_id=message_id, text=text, reply_markup=markup)
-    else:
-        api("sendMessage", chat_id=chat_id, text=text, reply_markup=markup)
-
-
-def send_block(chat_id, title, md, back_menu):
+def send_block(chat_id, title, md):
     # Rich messages (Bot API 10.3+) показывают настоящие таблицы; при ошибке - запасной текстовый вывод
     if md.strip() and api("sendRichMessage", chat_id=chat_id, rich_message={"markdown": f"## {title}\n\n{md}"}) is not None:
-        send_menu(chat_id, back_menu)
         return
-    parts = chunks(f"<b>{html.escape(title, quote=False)}</b>\n\n{render(md)}")
-    for p in parts:
+    for p in chunks(f"<b>{html.escape(title, quote=False)}</b>\n\n{render(md)}"):
         api("sendMessage", chat_id=chat_id, text=p, parse_mode="HTML")
-    send_menu(chat_id, back_menu)
 
 
-def handle_callback(cb):
-    chat_id = cb["message"]["chat"]["id"]
-    mid = cb["message"]["message_id"]
-    data = cb["data"]
-    api("answerCallbackQuery", callback_query_id=cb["id"])
-    kind, *rest = data.split(":")
-    if data == "m:main":
-        send_menu(chat_id, main_menu(), mid)
-    elif data == "m:tours":
-        send_menu(chat_id, tours_menu(), mid)
-    elif data == "m:season":
-        send_menu(chat_id, season_menu(), mid)
-    elif kind == "t":
-        send_menu(chat_id, tour_menu(int(rest[0])), mid)
-    elif kind == "tb":
-        n, key = int(rest[0]), rest[1]
-        title = dict(TOUR_BLOCKS)[key]
-        send_block(chat_id, f"{title} - Тур {n}", tour_block(n, key), tour_menu(n))
-    elif kind == "sb":
-        send_block(chat_id, dict(SEASON_BLOCKS)[rest[0]], season_block(rest[0]), season_menu())
+def handle_text(chat_id, text):
+    state = STATE.get(chat_id, {"screen": "main", "tour": None})
+    screen = state["screen"]
+    if text in ("/start", "/menu") or text.startswith(("/start@", "/menu@")) or text == BTN_BACK and screen in ("tours", "season"):
+        return show_main(chat_id)
+    if text == BTN_TOUR:
+        return show_tours(chat_id)
+    if text == BTN_SEASON:
+        return show_season(chat_id)
+    if text == BTN_TO_TOURS:
+        return show_tours(chat_id)
+    m = re.fullmatch(r"Тур (\d+)", text)
+    if m and int(m.group(1)) in available_tours():
+        return show_tour(chat_id, int(m.group(1)))
+    if screen == "tour" and state["tour"]:
+        for key, title in TOUR_BLOCKS:
+            if text == title:
+                n = state["tour"]
+                return send_block(chat_id, f"{title} - Тур {n}", tour_block(n, key))
+    if screen == "season":
+        for key, title in SEASON_BLOCKS:
+            if text == title:
+                return send_block(chat_id, title, season_block(key))
 
 
 def handle_update(u):
-    if "callback_query" in u:
-        cb = u["callback_query"]
-        if ALLOWED and cb["from"]["id"] not in ALLOWED and cb["message"]["chat"]["id"] not in ALLOWED:
-            return
-        handle_callback(cb)
-    elif "message" in u:
-        msg = u["message"]
-        if ALLOWED and msg["from"]["id"] not in ALLOWED and msg["chat"]["id"] not in ALLOWED:
-            return
-        if msg.get("text", "").startswith(("/start", "/menu")):
-            send_menu(msg["chat"]["id"], main_menu())
-
+    msg = u.get("message")
+    if not msg or "text" not in msg:
+        return
+    if ALLOWED and msg["from"]["id"] not in ALLOWED and msg["chat"]["id"] not in ALLOWED:
+        return
+    handle_text(msg["chat"]["id"], msg["text"].strip())
 
 def main():
     if not TOKEN:
@@ -280,7 +277,7 @@ def main():
     offset = None
     while True:
         try:
-            params = {"timeout": 50, "allowed_updates": ["message", "callback_query"]}
+            params = {"timeout": 50, "allowed_updates": ["message"]}
             if offset:
                 params["offset"] = offset
             for u in api("getUpdates", **params) or []:
