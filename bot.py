@@ -226,12 +226,12 @@ def send_menu(chat_id, menu, message_id=None):
         api("sendMessage", chat_id=chat_id, text=text, reply_markup=markup)
 
 
-def send_block(chat_id, md, back_menu):
+def send_block(chat_id, title, md, back_menu):
     # Rich messages (Bot API 10.3+) показывают настоящие таблицы; при ошибке - запасной текстовый вывод
-    if md.strip() and api("sendRichMessage", chat_id=chat_id, rich_message={"markdown": md}) is not None:
+    if md.strip() and api("sendRichMessage", chat_id=chat_id, rich_message={"markdown": f"## {title}\n\n{md}"}) is not None:
         send_menu(chat_id, back_menu)
         return
-    parts = chunks(render(md))
+    parts = chunks(f"<b>{html.escape(title, quote=False)}</b>\n\n{render(md)}")
     for p in parts:
         api("sendMessage", chat_id=chat_id, text=p, parse_mode="HTML")
     send_menu(chat_id, back_menu)
@@ -253,9 +253,10 @@ def handle_callback(cb):
         send_menu(chat_id, tour_menu(int(rest[0])), mid)
     elif kind == "tb":
         n, key = int(rest[0]), rest[1]
-        send_block(chat_id, tour_block(n, key), tour_menu(n))
+        title = dict(TOUR_BLOCKS)[key]
+        send_block(chat_id, f"{title} - Тур {n}", tour_block(n, key), tour_menu(n))
     elif kind == "sb":
-        send_block(chat_id, season_block(rest[0]), season_menu())
+        send_block(chat_id, dict(SEASON_BLOCKS)[rest[0]], season_block(rest[0]), season_menu())
 
 
 def handle_update(u):
