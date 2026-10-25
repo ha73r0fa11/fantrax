@@ -227,6 +227,10 @@ def send_menu(chat_id, menu, message_id=None):
 
 
 def send_block(chat_id, md, back_menu):
+    # Rich messages (Bot API 10.3+) показывают настоящие таблицы; при ошибке - запасной текстовый вывод
+    if md.strip() and api("sendRichMessage", chat_id=chat_id, rich_message={"markdown": md}) is not None:
+        send_menu(chat_id, back_menu)
+        return
     parts = chunks(render(md))
     for p in parts:
         api("sendMessage", chat_id=chat_id, text=p, parse_mode="HTML")
