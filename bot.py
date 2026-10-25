@@ -27,6 +27,7 @@ TOUR_BLOCKS = [
     ("king", "👑 Король скамейки"),
     ("super", "🔥 Супертопы"),
     ("free", "🆓 Свободные агенты"),
+    ("full", "📋 Полная статистика тура"),
 ]
 SEASON_BLOCKS = [
     ("records", "🏅 Рекорды"),
@@ -34,6 +35,7 @@ SEASON_BLOCKS = [
     ("team", "🌟 Сборная сезона"),
     ("top10", "🔟 10 лучших выступлений"),
     ("perf", "🥇 Лучший перформанс менеджеров"),
+    ("full", "📋 Полная статистика сезона"),
 ]
 # какой заголовок "### ..." в отчёте соответствует блоку
 SECTION_KEYS = {
@@ -96,12 +98,20 @@ def split_sections(text):
     return "\n".join(intro), [(h, "\n".join(b)) for h, b in sections]
 
 
+def full_text(md):
+    """Весь отчёт без хештегов и общих заголовков (их заменяет заголовок сообщения)."""
+    lines = [l for l in md.splitlines() if not l.startswith(("#статистика", "# ", "## "))]
+    return "\n".join(lines).strip()
+
+
 def tour_block(tour, key):
     text = read(f"tour_{tour}.md")
     if text is None:
         return "Нет данных по этому туру."
     tour_part = text.split("#статистикасезона")[0]
     intro, sections = split_sections(tour_part)
+    if key == "full":
+        return full_text(tour_part)
     if key == "lead":
         return "\n".join(l for l in intro.splitlines() if l.startswith("- "))
     if key == "king":
@@ -123,6 +133,8 @@ def season_block(key):
     if text is None:
         return "Нет данных по сезону."
     intro, sections = split_sections(text)
+    if key == "full":
+        return full_text(text)
     if key == "records":
         return "\n".join(l for l in intro.splitlines() if l.startswith("- "))
     for head, body in sections:
@@ -173,7 +185,9 @@ def render(md):
             table.append(line)
             continue
         flush()
-        if line.strip():
+        if line.startswith("### "):
+            out.append(f"<b>{html.escape(line[4:], quote=False)}</b>")
+        elif line.strip():
             out.append(re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", html.escape(line, quote=False)))
     flush()
     return "\n".join(out) or "Нет данных."
