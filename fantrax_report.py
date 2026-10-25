@@ -227,7 +227,40 @@ def validate(standings, team_name, roster, tour):
         print("Проверка: очки основных составов совпадают с таблицей лиги во всех турах", file=sys.stderr)
 
 
-def build_report(tour, standings, team_name, team_ids, roster, players, super_top):
+def fetch_battles(api, tour):
+    """Пары менеджеров по турам 1..tour: {тур: [(команда1, очки1, команда2, очки2), ...]}."""
+    data = api.query("getStandings", {"leagueId": api.league_id, "view": "SCHEDULE", "period": str(tour)})
+    battles = {}
+    for table in data["tableList"]:
+        m = re.search(r"(\d+)$", table["caption"])
+        if not m or int(m.group(1)) > tour:
+            continue
+        battles[int(m.group(1))] = [
+            (r["cells"][0]["content"], num(r["cells"][1]["content"]), r["cells"][2]["content"], num(r["cells"][3]["content"]))
+            for r in table["rows"]
+        ]
+    return battles
+
+
+def closest_battles(pairs):
+    """Противостояния с минимальной разницей очков (все при равенстве разницы)."""
+    return top([{"a": a, "pa": pa, "b": b, "pb": pb, "diff": abs(pa - pb)} for a, pa, b, pb in pairs], lambda x: x["diff"], smallest=True)
+
+
+def battle_text(x):
+    result = "ничья" if x["diff"] == 0 else f"разница {fmt(x['diff'])}"
+    return f"**{x['a']}** ({fmt(x['pa'])}) vs **{x['b']}** ({fmt(x['pb'])}), {result}"
+
+
+def battles_table(battles):
+    lines = ["| Тур | Битва тура | Очки | Разница |", "|---|---|---|---|"]
+    for p in sorted(battles):
+        for x in closest_battles(battles[p]):
+            lines.append(f"| {p} | {x['a']} vs {x['b']} | {fmt(x['pa'])} : {fmt(x['pb'])} | {fmt(x['diff'])} |")
+    return "\n".join(lines) + "\n"
+
+
+def build_report(tour, standings, team_name, team_ids, roster, players, super_top, battles=None):
     out = []
 
     def line(s=""):
@@ -264,6 +297,8 @@ def build_report(tour, standings, team_name, team_ids, roster, players, super_to
     last = top(cur_teams, lambda x: x["fpts"], smallest=True)
     line("- 🏆 **Лидер тура:** " + ", ".join(f"**{x['team']}** ({fmt(x['fpts'])})" for x in lead))
     line("- 📉 **Нелидер тура:** " + ", ".join(f"**{x['team']}** ({fmt(x['fpts'])})" for x in last))
+    if battles and battles.get(tour):
+        line("- ⚔️ **Битва тура:** " + "; ".join(battle_text(x) for x in closest_battles(battles[tour])))
     line()
 
     line("### Лучшие футболисты тура (основной состав)")
@@ -428,6 +463,7 @@ def main():
     parser.add_argument("--league-id", default="rwoc4s02mrui4mac")
     parser.add_argument("--out-file", help="сохранить отчёт в файл (UTF-8)")
     parser.add_argument("--docx", help="сохранить отчёт в файл .docx")
+    parser.add_argument("--battles-table", help="только таблица «Битв тура» за туры 1..N в этот файл (быстро)")
     parser.add_argument("--super-top", type=float, default=30, help="порог очков для супертопов")
     args = parser.parse_args()
 
@@ -435,9 +471,16 @@ def main():
     sys.stderr.reconfigure(encoding="utf-8")
 
     api = Fantrax(args.league_id)
+    battles = fetch_battles(api, args.tour)
+    if args.battles_table:
+        table_text = battles_table(battles)
+        with open(args.battles_table, "w", encoding="utf-8", newline="\n") as f:
+            f.write(table_text)
+        print(table_text)
+        return
     standings, team_name, team_ids, roster, players = load_data(api, args.tour)
     validate(standings, team_name, roster, args.tour)
-    text = build_report(args.tour, standings, team_name, team_ids, roster, players, args.super_top)
+    text = build_report(args.tour, standings, team_name, team_ids, roster, players, args.super_top, battles)
     if args.out_file:
         with open(args.out_file, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
