@@ -8,6 +8,7 @@
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -16,6 +17,9 @@ import urllib.request
 CLIENT_VERSION = "187.0.1"
 SEASON_CODE = "SEASON_926_BY_PERIOD"
 POS_NAMES = {"G": "вратарь", "D": "защитник", "M": "полузащитник", "F": "нападающий"}
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CACHE = os.path.join(HERE, "data", "cache")
 
 
 class Fantrax:
@@ -108,106 +112,160 @@ def owner_text(x):
     return f"{x['owner']} (скамейка)"
 
 
-def load_data(api, tour):
-    standings = {}
-    team_name = {}
-    for p in range(1, tour + 1):
-        d = api.query("getStandings", {"leagueId": api.league_id, "timeframeType": "BY_PERIOD", "period": str(p)})
-        table = d["tableList"][0]
-        header = [c["shortName"] for c in table["header"]["cells"]]
-        iw, idr, il, ip, iff = (col(header, n) for n in ("W", "D", "L", "Points", "FPtsF"))
-        rows = []
-        for r in table["rows"]:
-            team = r["fixedCells"][1]
-            team_name[team["teamId"]] = team["content"]
-            rows.append(
-                {
-                    "team_id": team["teamId"],
-                    "w": num(cell(r, iw)),
-                    "d": num(cell(r, idr)),
-                    "l": num(cell(r, il)),
-                    "pts": num(cell(r, ip)),
-                    "fpts": num(cell(r, iff)),
-                }
-            )
-        standings[p] = rows
-        print(f"Тур {p}: таблица загружена", file=sys.stderr)
-    team_ids = [r["team_id"] for r in standings[1]]
+def cache_path(tour):
+    return os.path.join(CACHE, f"tour_{tour}.json")
+
+
+def save_cache(tour, payload):
+    os.makedirs(CACHE, exist_ok=True)
+    with open(cache_path(tour), "w", encoding="utf-8", newline="\n") as f:
+        json.dump(payload, f, ensure_ascii=False)
+
+
+def load_cache(tour):
+    try:
+        with open(cache_path(tour), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def fetch_tour(api, p, team_ids, team_name):
+    """Загружает с Fantrax данные одного тура: таблицу, составы и игроков."""
+    d = api.query("getStandings", {"leagueId": api.league_id, "timeframeType": "BY_PERIOD", "period": str(p)})
+    table = d["tableList"][0]
+    header = [c["shortName"] for c in table["header"]["cells"]]
+    iw, idr, il, ip, iff = (col(header, n) for n in ("W", "D", "L", "Points", "FPtsF"))
+    standings = []
+    for r in table["rows"]:
+        team = r["fixedCells"][1]
+        team_name[team["teamId"]] = team["content"]
+        standings.append(
+            {
+                "team_id": team["teamId"],
+                "w": num(cell(r, iw)),
+                "d": num(cell(r, idr)),
+                "l": num(cell(r, il)),
+                "pts": num(cell(r, ip)),
+                "fpts": num(cell(r, iff)),
+            }
+        )
+    print(f"Тур {p}: таблица загружена", file=sys.stderr)
+
+    if not team_ids:
+        team_ids = [r["team_id"] for r in standings]
 
     roster = []
     owner_of = {}
-    for p in range(1, tour + 1):
-        for tid in team_ids:
-            base = {
-                "leagueId": api.league_id,
-                "teamId": tid,
-                "period": str(p),
-                "view": "STATS",
-                "seasonOrProjection": SEASON_CODE,
-                "timeframeTypeCode": "BY_PERIOD",
-            }
-            d = api.query("getTeamRosterInfo", base)
-            for tb in d["tables"]:
-                header = [c["shortName"] for c in tb["header"]["cells"]]
-                iff, ig, ia = col(header, "FPts"), col(header, "G"), col(header, "AT")
-                for row in tb["rows"]:
-                    scorer = row.get("scorer")
-                    if not scorer or not scorer.get("scorerId"):
-                        continue
-                    g, a = num(cell(row, ig)), num(cell(row, ia))
-                    entry = {
-                        "tour": p,
-                        "team_id": tid,
-                        "team": team_name[tid],
-                        "id": scorer["scorerId"],
-                        "name": scorer["name"],
-                        "club": scorer.get("teamShortName"),
-                        "pos": primary_pos(scorer.get("posShortNames")),
-                        "active": row.get("statusId") == "1",
-                        "fpts": num(cell(row, iff)),
-                        "g": g,
-                        "a": a,
-                    }
-                    roster.append(entry)
-                    owner_of[(p, entry["id"])] = entry
-        print(f"Тур {p}: составы загружены", file=sys.stderr)
+    for tid in team_ids:
+        base = {
+            "leagueId": api.league_id,
+            "teamId": tid,
+            "period": str(p),
+            "view": "STATS",
+            "seasonOrProjection": SEASON_CODE,
+            "timeframeTypeCode": "BY_PERIOD",
+        }
+        d = api.query("getTeamRosterInfo", base)
+        for tb in d["tables"]:
+            header = [c["shortName"] for c in tb["header"]["cells"]]
+            iff, ig, ia = col(header, "FPts"), col(header, "G"), col(header, "AT")
+            for row in tb["rows"]:
+                scorer = row.get("scorer")
+                if not scorer or not scorer.get("scorerId"):
+                    continue
+                g, a = num(cell(row, ig)), num(cell(row, ia))
+                entry = {
+                    "tour": p,
+                    "team_id": tid,
+                    "team": team_name[tid],
+                    "id": scorer["scorerId"],
+                    "name": scorer["name"],
+                    "club": scorer.get("teamShortName"),
+                    "pos": primary_pos(scorer.get("posShortNames")),
+                    "active": row.get("statusId") == "1",
+                    "fpts": num(cell(row, iff)),
+                    "g": g,
+                    "a": a,
+                }
+                roster.append(entry)
+                owner_of[(p, entry["id"])] = entry
+    print(f"Тур {p}: составы загружены", file=sys.stderr)
 
     players = []
-    for p in range(1, tour + 1):
-        page = 1
-        while True:
-            d = api.query(
-                "getPlayerStats",
+    page = 1
+    while True:
+        d = api.query(
+            "getPlayerStats",
+            {
+                "leagueId": api.league_id,
+                "statusOrTeamFilter": "ALL",
+                "seasonOrProjection": SEASON_CODE,
+                "timeframeTypeCode": "BY_PERIOD",
+                "transactionPeriod": str(p),
+                "pageNumber": str(page),
+            },
+        )
+        header = [c["shortName"] for c in d["tableHeader"]["cells"]]
+        iff = col(header, "FPts")
+        for r in d["statsTable"]:
+            scorer = r["scorer"]
+            own = owner_of.get((p, scorer["scorerId"]))
+            players.append(
                 {
-                    "leagueId": api.league_id,
-                    "statusOrTeamFilter": "ALL",
-                    "seasonOrProjection": SEASON_CODE,
-                    "timeframeTypeCode": "BY_PERIOD",
-                    "transactionPeriod": str(p),
-                    "pageNumber": str(page),
-                },
+                    "tour": p,
+                    "id": scorer["scorerId"],
+                    "name": scorer["name"],
+                    "club": scorer.get("teamShortName"),
+                    "pos": primary_pos(scorer.get("posShortNames")),
+                    "fpts": num(cell(r, iff)),
+                    "owner": own["team"] if own else None,
+                    "active": own["active"] if own else False,
+                }
             )
-            header = [c["shortName"] for c in d["tableHeader"]["cells"]]
-            iff = col(header, "FPts")
-            for r in d["statsTable"]:
-                scorer = r["scorer"]
-                own = owner_of.get((p, scorer["scorerId"]))
-                players.append(
-                    {
-                        "tour": p,
-                        "id": scorer["scorerId"],
-                        "name": scorer["name"],
-                        "club": scorer.get("teamShortName"),
-                        "pos": primary_pos(scorer.get("posShortNames")),
-                        "fpts": num(cell(r, iff)),
-                        "owner": own["team"] if own else None,
-                        "active": own["active"] if own else False,
-                    }
-                )
-            page += 1
-            if page > d["paginatedResultSet"]["totalNumPages"]:
-                break
-        print(f"Тур {p}: игроки загружены", file=sys.stderr)
+        page += 1
+        if page > d["paginatedResultSet"]["totalNumPages"]:
+            break
+    print(f"Тур {p}: игроки загружены", file=sys.stderr)
+
+    return standings, roster, players, team_ids
+
+
+def load_data(api, tour, use_cache=True):
+    """Данные туров 1..tour; уже собранные туры берутся из кэша, чтобы не запрашивать их повторно."""
+    standings = {}
+    team_name = {}
+    team_ids = []
+    roster = []
+    players = []
+
+    for p in range(1, tour + 1):
+        cached = load_cache(p) if use_cache else None
+        if cached is not None:
+            standings[p] = cached["standings"]
+            roster.extend(cached["roster"])
+            players.extend(cached["players"])
+            team_name.update({int(tid): name for tid, name in cached["team_name"].items()})
+            if p == 1:
+                team_ids = [r["team_id"] for r in cached["standings"]]
+            print(f"Тур {p}: из кэша", file=sys.stderr)
+            continue
+
+        st, ro, pl, ids = fetch_tour(api, p, team_ids, team_name)
+        standings[p] = st
+        roster.extend(ro)
+        players.extend(pl)
+        if p == 1:
+            team_ids = ids
+        save_cache(
+            p,
+            {
+                "standings": st,
+                "roster": ro,
+                "players": pl,
+                "team_name": {str(tid): name for tid, name in team_name.items()},
+            },
+        )
 
     return standings, team_name, team_ids, roster, players
 
@@ -464,6 +522,7 @@ def main():
     parser.add_argument("--out-file", help="сохранить отчёт в файл (UTF-8)")
     parser.add_argument("--docx", help="сохранить отчёт в файл .docx")
     parser.add_argument("--battles-table", help="только таблица «Битв тура» за туры 1..N в этот файл (быстро)")
+    parser.add_argument("--no-cache", action="store_true", help="не брать старые туры из кэша, перезагрузить их с Fantrax")
     parser.add_argument("--super-top", type=float, default=30, help="порог очков для супертопов")
     args = parser.parse_args()
 
@@ -478,7 +537,7 @@ def main():
             f.write(table_text)
         print(table_text)
         return
-    standings, team_name, team_ids, roster, players = load_data(api, args.tour)
+    standings, team_name, team_ids, roster, players = load_data(api, args.tour, use_cache=not args.no_cache)
     validate(standings, team_name, roster, args.tour)
     text = build_report(args.tour, standings, team_name, team_ids, roster, players, args.super_top, battles)
     if args.out_file:
