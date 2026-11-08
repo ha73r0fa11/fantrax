@@ -500,13 +500,9 @@ def build_report(tour, standings, team_name, team_ids, roster, players, super_to
         [[i, fmt(x["fpts"]), x["name"], x["tour"]] for i, x in enumerate(best_players, start=1)],
     )
 
-    line("### 🏆 Лучший перформанс менеджеров (лучший в каждом туре)")
+    line("### 🏆 Лучший перформанс менеджеров (топ-10 за все туры)")
     line()
-    best_managers = []
-    for p in range(1, tour + 1):
-        for s in top(standings[p], lambda x: x["fpts"]):
-            best_managers.append({"tour": p, "team": team_name[s["team_id"]], "fpts": s["fpts"]})
-    best_managers.sort(key=lambda x: (-x["fpts"], x["tour"]))
+    best_managers = sorted(tour_scores, key=lambda x: (-x["fpts"], x["tour"], x["team"].casefold()))[:10]
     table(
         ["#", "Очки", "Менеджер", "Тур"],
         [[i, fmt(x["fpts"]), x["team"], x["tour"]] for i, x in enumerate(best_managers, start=1)],
