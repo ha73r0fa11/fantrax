@@ -245,7 +245,7 @@ def load_data(api, tour, use_cache=True):
             standings[p] = cached["standings"]
             roster.extend(cached["roster"])
             players.extend(cached["players"])
-            team_name.update({int(tid): name for tid, name in cached["team_name"].items()})
+            team_name.update(cached["team_name"])
             if p == 1:
                 team_ids = [r["team_id"] for r in cached["standings"]]
             print(f"Тур {p}: из кэша", file=sys.stderr)
